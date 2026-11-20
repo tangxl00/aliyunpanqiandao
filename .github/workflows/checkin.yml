@@ -1,0 +1,33 @@
+name: 阿里云盘每日签到
+
+on:
+  schedule:
+    # GitHub Actions 使用 UTC 时区；UTC 01:00 = 北京时间 09:00
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 执行签到
+        env:
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+          DRY_RUN: ${{ vars.DRY_RUN || '0' }}
+          SERVERCHAN_SCKEY: ${{ secrets.SERVERCHAN_SCKEY }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BARK_URL: ${{ secrets.BARK_URL }}
+        run: node scripts/checkin.mjs

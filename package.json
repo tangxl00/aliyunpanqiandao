@@ -1,0 +1,16 @@
+{
+  "name": "aliyun-drive-auto-checkin",
+  "version": "1.0.0",
+  "description": "阿里云盘每日自动签到 - GitHub Actions + refresh_token，零第三方依赖",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "checkin": "node scripts/checkin.mjs",
+    "test": "node scripts/checkin.mjs --dry-run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["aliyundrive", "checkin", "github-actions", "sign-in"],
+  "license": "MIT"
+}
