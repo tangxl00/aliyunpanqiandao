@@ -9,7 +9,7 @@
     "test": "node scripts/checkin.mjs --dry-run"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "keywords": ["aliyundrive", "checkin", "github-actions", "sign-in"],
   "license": "MIT"
