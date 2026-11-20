@@ -43,15 +43,41 @@ const API = {
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-async function post(url, body, token) {
+function diagErr(url, err, attempt) {
+  const d = err && err.cause || err;
+  const name = d && (d.code || d.name) || "";
+  const extra = d && (d.syscall || d.hostname) ? (" [" + d.syscall + " " + d.hostname + "]") : "";
+  return new Error("[HTTP " + url.slice(0, 60) + "] attempt " + attempt + " failed: " + name + (extra ? extra : "") + " :: " + err.message);
+}
+
+async function post(url, body, token, maxRetry = 3) {
   const headers = { "Content-Type": "application/json", "User-Agent": UA };
   if (token) headers["Authorization"] = token;
-  const resp = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  const text = await resp.text();
-  let json;
-  try { json = JSON.parse(text); }
-  catch { throw new Error("响应非 JSON: " + String(text).slice(0, 200)); }
-  return json;
+  const payload = JSON.stringify(body);
+  let lastErr;
+  for (let i = 1; i <= maxRetry; i++) {
+    try {
+      if (i > 1) {
+        const wait = 1500 * Math.pow(2, i - 2);
+        console.log("  [retry " + i + "/" + maxRetry + "] wait " + wait + "ms...");
+        await new Promise(r => setTimeout(r, wait));
+      }
+      const resp = await fetch(url, {
+        method: "POST", headers, body: payload,
+        signal: AbortSignal.timeout(20000),
+      });
+      const text = await resp.text();
+      if (!resp.ok) throw new Error("HTTP " + resp.status + " " + resp.statusText + " body=" + text.slice(0, 200));
+      let json;
+      try { json = JSON.parse(text); }
+      catch { throw new Error("响应非 JSON: " + String(text).slice(0, 200)); }
+      return json;
+    } catch (e) {
+      lastErr = diagErr(url, e, i);
+      console.log("  [attempt " + i + "] " + lastErr.message);
+    }
+  }
+  throw lastErr;
 }
 
 async function refreshToken(rt) {
