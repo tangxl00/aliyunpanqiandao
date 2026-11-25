@@ -91,9 +91,19 @@ async function doSignIn(accessToken) {
   return { signList: result, alreadySigned: isAlreadySignedToday(result) };
 }
 
+// 注意：阿里云盘领奖接口从 2024-05 起引入客户端级签名校验，纯 HTTP 调用会 403。
+// 这里只做一次尝试，不重试，失败直接跳过，不影响签到成功判定。
 async function claimRewards(accessToken, today, dryRun) {
   const rewards = (today && today.rewards) || [];
   const lines = [];
+  if (dryRun) {
+    for (const reward of rewards) {
+      if (!reward || reward.status !== "finished") continue;
+      const label = reward.name || reward.type;
+      lines.push("[DRY-RUN] 可领取: " + label);
+    }
+    return lines;
+  }
   for (const reward of rewards) {
     if (!reward || reward.status !== "finished") continue;
     let url = null;
@@ -101,12 +111,28 @@ async function claimRewards(accessToken, today, dryRun) {
     else if (reward.type === "dailyTask") url = API.rewardV2;
     if (!url) continue;
     const label = reward.name || reward.type;
-    if (dryRun) { lines.push("[DRY-RUN] 可领取: " + label); continue; }
     try {
-      const r = await post(url, { signInDay: today.day }, accessToken, 3);
-      if (r.success) { const info = r.result || {}; lines.push("领取成功: " + label + " " + (info.name || info.description || info.notice || "")); }
-      else lines.push("领取失败: " + label + " - " + (r.message || ""));
-    } catch (e) { lines.push("领取异常: " + label + " - " + e.message); }
+      // 1 次尝试，不 retry（403 是签名校验不过，retry 没用）
+      const resp = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json", "Authorization": accessToken, "User-Agent": UA },
+        body: JSON.stringify({ signInDay: today.day }), signal: AbortSignal.timeout(20000),
+      });
+      const text = await resp.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch { /* non-JSON skip */ }
+      if (resp.ok && json && json.success) {
+        const info = json.result || {};
+        lines.push("领奖成功: " + label + " " + (info.name || info.description || info.notice || ""));
+      } else if (resp.status === 403) {
+        // 阿里云盘要求客户端签名，领奖接口暂时无法纯 HTTP 调用，跳过
+        console.log("  [领奖] " + label + " → 403 签名校验，跳过（不影响签到）");
+      } else {
+        const detail = (json && json.message) || "HTTP " + resp.status;
+        console.log("  [领奖] " + label + " → " + detail + "，跳过");
+      }
+    } catch (e) {
+      console.log("  [领奖] " + label + " → " + e.message + "，跳过");
+    }
   }
   return lines;
 }
