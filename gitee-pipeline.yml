@@ -1,0 +1,38 @@
+version: '1.0'
+name: aliyundrive-checkin
+displayName: 阿里云盘每日签到
+triggers:
+  trigger: auto
+  push:
+    branches:
+      prefix:
+        - master
+  schedule:
+    # 北京时间（Gitee Go 时区）：08:30 / 16:30 / 22:30
+    # cron 格式：秒 分 时 日 月 周
+    - cron: '0 30 8 * * ?'
+    - cron: '0 30 16 * * ?'
+    - cron: '0 30 22 * * ?'
+
+stages:
+  - name: checkin
+    displayName: 签到
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: custom@1
+        name: checkout
+        displayName: 检出代码
+        commands:
+          - git checkout master
+
+      - step: build@nodejs
+        name: nodejs
+        displayName: 安装 Node.js 22 并执行签到
+        nodeVersion: 22.11.0
+        commands:
+          - node scripts/checkin.mjs
+        notify: []
+        strategy:
+          retry: '0'
