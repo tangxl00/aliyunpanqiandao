@@ -1,0 +1,37 @@
+name: 阿里云盘每日签到
+
+run-list:
+  - name: cron
+    type: schedule
+    cron: '0 30 8,16,22 * * ?'
+    # 北京时间 08:30 / 16:30 / 22:30 各跑一次（Gitee cron 是中国时区，精确触发）
+    # 阿里云盘接口幂等，重复跑只提示"今日已签到"
+  - name: manual
+    type: manual
+
+jobs:
+  checkin:
+    runs-on: ubuntu:22.04
+    timeout: 10m
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        run: |
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+
+      - name: 执行签到
+        env:
+          REFRESH_TOKEN: ${gitee.REFRESH_TOKEN}
+          DRY_RUN: ${gitee.DRY_RUN}
+          SERVERCHAN_SCKEY: ${gitee.SERVERCHAN_SCKEY}
+          PUSHPLUS_TOKEN: ${gitee.PUSHPLUS_TOKEN}
+          DINGTALK_WEBHOOK: ${gitee.DINGTALK_WEBHOOK}
+          WECHAT_WEBHOOK: ${gitee.WECHAT_WEBHOOK}
+          TELEGRAM_BOT_TOKEN: ${gitee.TELEGRAM_BOT_TOKEN}
+          TELEGRAM_CHAT_ID: ${gitee.TELEGRAM_CHAT_ID}
+          BARK_URL: ${gitee.BARK_URL}
+        run: node scripts/checkin.mjs
+
