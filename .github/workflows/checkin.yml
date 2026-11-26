@@ -2,11 +2,19 @@ name: 阿里云盘每日签到
 
 on:
   schedule:
-    # 阿里云盘会在国内早高峰（北京时间 08:00-14:00）对海外 IP 丢包，GitHub 只能跑国内放行的时段
-    # 安全窗口：凌晨 04:30（必通）/ 下午 15:30 / 16:30（晚高峰前）/ 晚上 22:30
-    # 阿里云盘接口幂等，同一天重复跑只会提示"今日已签到"
+    # GitHub Actions cron 使用 UTC，北京时间 = UTC + 8
+    # 一天跑 4 次（北京 15:30 / 16:30 / 22:30 / 次日 04:30）
+    # 脚本自带每日状态：当天已签到过的账号不会再调用签到接口，每个推送渠道每天只推一次
     - cron: '30 7,8,14,20 * * *'
   workflow_dispatch:
+
+# 同一时间只允许一个实例，避免两次运行同时读写状态
+concurrency:
+  group: aliyun-checkin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   checkin:
@@ -21,6 +29,15 @@ jobs:
         with:
           node-version: '22'
 
+      # 恢复上次运行留下的签到/推送状态（缓存只写一次，用 run_id 做 key 再靠 restore-keys 取最新）
+      - name: 恢复签到状态
+        uses: actions/cache/restore@v4
+        with:
+          path: .checkin-state.json
+          key: checkin-state-${{ github.run_id }}
+          restore-keys: |
+            checkin-state-
+
       - name: 执行签到
         env:
           REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
@@ -33,3 +50,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           BARK_URL: ${{ secrets.BARK_URL }}
         run: node scripts/checkin.mjs
+
+      # 保证状态文件存在，否则 cache save 会因路径校验失败
+      - name: 确保状态文件存在
+        if: always()
+        run: touch .checkin-state.json
+
+      - name: 保存签到状态
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .checkin-state.json
+          key: checkin-state-${{ github.run_id }}
