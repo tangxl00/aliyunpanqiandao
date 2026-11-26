@@ -211,6 +211,91 @@ test("只配 PushPlus 且今天已推过：第二次运行不再推送", async (
   assert.equal(calls.filter((u) => u.includes("sign_in_list")).length, 0, "第二次不重复签到");
 });
 
+test("多账号：& 分隔的多个 token 各自签到，各自记状态", async () => {
+  process.env.REFRESH_TOKEN = "token-A&token-B&token-C";
+  process.env.PUSHPLUS_TOKEN = "PP";
+
+  const seenTokens = [];
+  installFetch([
+    ["/v2/account/token", (url, options) => {
+      const body = JSON.parse(options.body);
+      seenTokens.push(body.refresh_token);
+      return jsonResponse({ access_token: "AT-" + body.refresh_token, nick_name: "nick-" + body.refresh_token });
+    }],
+    ["sign_in_list", () => signedResponse(9)],
+    ["pushplus.plus", () => jsonResponse({ code: 200 })],
+  ]);
+
+  await main();
+
+  assert.deepEqual(seenTokens, ["token-A", "token-B", "token-C"], "三个账号都被签到");
+  assert.equal(calls.filter((u) => u.includes("sign_in_list")).length, 3, "三次签到调用");
+  assert.equal(calls.filter((u) => u.includes("pushplus.plus")).length, 1, "三个账号合并成一条推送");
+
+  const day = loadState().days[beijingDate(new Date())];
+  assert.equal(Object.keys(day.accounts).length, 3, "三个账号各自记账");
+  assert.ok(Object.values(day.accounts).every((a) => a.signed === true));
+});
+
+test("多账号：换行分隔同样支持，且状态文件不存明文 token", async () => {
+  process.env.REFRESH_TOKEN = "token-X\ntoken-Y";
+
+  installFetch([
+    ["/v2/account/token", () => tokenResponse],
+    ["sign_in_list", () => signedResponse(9)],
+  ]);
+
+  await main();
+
+  assert.equal(calls.filter((u) => u.includes("sign_in_list")).length, 2, "两个账号都签到");
+  const raw = fs.readFileSync(path.join(dir, "state.json"), "utf8");
+  assert.ok(!raw.includes("token-X"), "状态文件不含明文 token");
+  assert.ok(!raw.includes("token-Y"), "状态文件不含明文 token");
+  assert.equal(Object.keys(loadState().days[beijingDate(new Date())].accounts).length, 2, "两个账号各自记账");
+});
+
+test("多账号：其中一个失败则整体不推送", async () => {
+  process.env.REFRESH_TOKEN = "good&bad";
+  process.env.PUSHPLUS_TOKEN = "PP";
+
+  installFetch([
+    ["/v2/account/token", (url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.refresh_token === "bad") return jsonResponse({ code: "RefreshTokenExpired", message: "expired" });
+      return tokenResponse;
+    }],
+    ["sign_in_list", () => signedResponse(9)],
+    ["pushplus.plus", () => jsonResponse({ code: 200 })],
+  ]);
+
+  await main();
+
+  assert.equal(calls.filter((u) => u.includes("pushplus.plus")).length, 0, "有失败则不推送");
+  assert.equal(process.exitCode, 1);
+});
+
+test("多账号：第二天会重新签到所有账号", async () => {
+  process.env.REFRESH_TOKEN = "token-A&token-B";
+
+  installFetch([
+    ["/v2/account/token", () => tokenResponse],
+    ["sign_in_list", () => signedResponse(9)],
+  ]);
+  await main();
+  assert.equal(calls.filter((u) => u.includes("sign_in_list")).length, 2);
+
+  // 把状态里的日期改成昨天，模拟跨天
+  const state = loadState();
+  const today = beijingDate(new Date());
+  state.days["2000-01-01"] = state.days[today];
+  delete state.days[today];
+  fs.writeFileSync(path.join(dir, "state.json"), JSON.stringify(state));
+
+  calls = [];
+  await main();
+  assert.equal(calls.filter((u) => u.includes("sign_in_list")).length, 2, "新的一天重新签到");
+});
+
 test("北京时区日期按 UTC+8 计算", () => {
   const utcLate = new Date("2026-11-25T18:30:00Z");
   assert.equal(beijingDate(utcLate), "2026-11-26");
