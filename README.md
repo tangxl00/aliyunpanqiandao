@@ -52,6 +52,61 @@ copy(JSON.parse(localStorage.token).refresh_token)
 
 详细图文步骤见 [CREDENTIALS.md](CREDENTIALS.md)。
 
+## 👥 增加签到账号
+
+脚本本身**不限账号数量**，只需把多个 `refresh_token` 拼进同一个 Secret。
+
+### 步骤
+
+1. 每个账号分别登录阿里云盘网页版，控制台取一次 `refresh_token`：
+
+   ```javascript
+   copy(JSON.parse(localStorage.token).refresh_token)
+   ```
+
+2. 把所有 token 用 **`&`** 或**换行**拼成一个字符串：
+
+   ```
+   token_账号1&token_账号2&token_账号3
+   ```
+
+   换行也行（GitHub Secrets 支持多行）：
+
+   ```
+   token_账号1
+   token_账号2
+   token_账号3
+   ```
+
+3. 打开 **Settings → Secrets and variables → Actions**，编辑 `REFRESH_TOKEN`，粘贴拼好的整串，保存。
+
+4. 到 **Actions** 手动 Run workflow 一次，日志里会看到：
+
+   ```
+   账号数量   3
+   ----
+     昵称A(账号1)：签到成功，本月累计 7 天
+     昵称B(账号2)：签到成功，本月累计 12 天
+     昵称C(账号3)：签到成功，本月累计 3 天
+   ----
+   完成：成功 3 / 3，本次新签到 3 个账号
+   ```
+
+### 行为说明
+
+| 场景 | 表现 |
+|---|---|
+| 全部账号成功 | 合并成**一条**推送，正文列出每个账号的结果 |
+| 任一账号失败 | **完全不推送**，退出码非 0，下次 cron 再试 |
+| 某账号当天已签过 | 单独跳过，不影响其他账号 |
+| 增减账号 | 直接改 `REFRESH_TOKEN`，无需改代码 |
+
+### 注意
+
+- 账号之间**串行执行**，每个账号要刷新 token + 签到 + 尝试领奖。10 个账号大约 15～25 秒，仍在 `timeout-minutes: 10` 之内。
+- 状态文件按 token 的 SHA-256 前 12 位记账，**不保存明文 token**，但**调整账号顺序不影响**已有记录。
+- 删掉某个账号的 token 后，它的历史记录会在 14 天后随过期清理自动消失。
+
 ## 📢 消息推送（可选）
 
 在 GitHub Secrets（或本地 `.env`）里按需配置对应变量即可启用，留空则不推送：
