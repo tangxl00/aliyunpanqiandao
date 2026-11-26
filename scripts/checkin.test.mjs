@@ -174,6 +174,43 @@ test("业务失败（HTTP 200 但 ok=false）也算失败，下次重试", async
   assert.equal(parseChannelFailure(JSON.stringify({ code: 0 })), null);
 });
 
+test("去掉 ServerChan 后只配 PushPlus：只推一次，旧的 ServerChan 记录不影响", async () => {
+  process.env.PUSHPLUS_TOKEN = "PP"; // 不再配置 SERVERCHAN_SCKEY
+  const date = beijingDate(new Date());
+  const seed = { version: 1, days: { [date]: { accounts: {}, pushed: { ServerChan: "2026-11-26T02:00:00.000Z" } } } };
+  fs.writeFileSync(path.join(dir, "state.json"), JSON.stringify(seed));
+
+  installFetch([
+    ["/v2/account/token", () => tokenResponse],
+    ["sign_in_list", () => signedResponse(7)],
+    ["pushplus.plus", () => jsonResponse({ code: 200 })],
+  ]);
+
+  await main();
+
+  assert.equal(calls.filter((u) => u.includes("pushplus.plus")).length, 1, "PushPlus 推一次");
+  assert.equal(calls.filter((u) => u.includes("sc.ftqq.com")).length, 0, "不再调用 ServerChan");
+  assert.ok(loadState().days[date].pushed.PushPlus, "PushPlus 已记账");
+});
+
+test("只配 PushPlus 且今天已推过：第二次运行不再推送", async () => {
+  process.env.PUSHPLUS_TOKEN = "PP";
+  installFetch([
+    ["/v2/account/token", () => tokenResponse],
+    ["sign_in_list", () => signedResponse(7)],
+    ["pushplus.plus", () => jsonResponse({ code: 200 })],
+  ]);
+
+  await main();
+  assert.equal(calls.filter((u) => u.includes("pushplus.plus")).length, 1);
+
+  calls = [];
+  await main();
+
+  assert.equal(calls.filter((u) => u.includes("pushplus.plus")).length, 0, "第二次不重复推送");
+  assert.equal(calls.filter((u) => u.includes("sign_in_list")).length, 0, "第二次不重复签到");
+});
+
 test("北京时区日期按 UTC+8 计算", () => {
   const utcLate = new Date("2026-11-25T18:30:00Z");
   assert.equal(beijingDate(utcLate), "2026-11-26");
